@@ -4,3 +4,4 @@ matplotlib
 plotly
 requests
 urllib3
+streamlit
