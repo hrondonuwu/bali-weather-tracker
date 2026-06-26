@@ -14,6 +14,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+HOT_THRESHOLD = 68
+COLD_THRESHOLD = 45
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
+
 LATITUDE = -8.4095
 LONGITUDE = 115.1889
 LOCATION_NAME = "Bali, Indonesia"
@@ -95,6 +99,15 @@ def generate_dashboard(df):
     fig.write_html("dashboard.html", include_plotlyjs="cdn")
     print("Dashboard saved to dashboard.html")
 
+def send_discord_alert(message):
+    if not DISCORD_WEBHOOK_URL:
+        print("No Discord webhook configured.")
+        return
+    response = requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
+    if response.status_code == 204:
+        print("Discord alert sent.")
+    else:
+        print(f"Discord alert failed: {response.status_code}")
 
 today = date.today()
 current_year = today.year
@@ -102,6 +115,13 @@ current_year = today.year
 current_data = get_current_weather(LATITUDE, LONGITUDE)
 current_temp = current_data["current"]["temperature_2m"]
 current_time = current_data["current"]["time"]
+
+temp_f = round(current_temp * 9/5 + 32, 1)
+
+if temp_f > HOT_THRESHOLD:
+    send_discord_alert(f"Heat alert! {temp_f:.1f}F — above your {HOT_THRESHOLD}F threshold.")
+elif temp_f < COLD_THRESHOLD:
+    send_discord_alert(f"Cold alert! {temp_f:.1f}F — below your {COLD_THRESHOLD}F threshold.")
 
 log_df = pd.DataFrame({
     "date": [str(today)],
