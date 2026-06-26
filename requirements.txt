@@ -2,3 +2,5 @@ pandas
 requests
 matplotlib
 plotly
+requests
+urllib3

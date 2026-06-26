@@ -2,6 +2,11 @@ import requests
 import pandas as pd
 from datetime import date
 import os
+import plotly.graph_objects as go
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 os.environ['MPLBACKEND'] = 'Agg'
 
@@ -9,15 +14,22 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# My camping location
 LATITUDE = -8.4095
 LONGITUDE = 115.1889
 LOCATION_NAME = "Bali, Indonesia"
 
-# Camping month and day range
 CAMP_MONTH = 8
 CAMP_START_DAY = 1
 CAMP_END_DAY = 14
+
+session = requests.Session()
+retries = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    raise_on_status=False
+)
+session.mount("https://", HTTPAdapter(max_retries=retries))
 
 def get_historical_weather(lat, lon, start_date, end_date):
     url = "https://archive-api.open-meteo.com/v1/archive"
@@ -29,9 +41,8 @@ def get_historical_weather(lat, lon, start_date, end_date):
         "daily": "temperature_2m_max,temperature_2m_min",
         "timezone": "America/Los_Angeles"
     }
-    response = requests.get(url, params=params)
+    response = session.get(url, params=params, timeout=10)
     return response.json()
-
 
 def get_forecast(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
@@ -42,7 +53,7 @@ def get_forecast(lat, lon):
         "timezone": "America/Los_Angeles",
         "forecast_days": 7
     }
-    response = requests.get(url, params=params)
+    response = session.get(url, params=params, timeout=10)
     return response.json()
 
 def get_current_weather(lat, lon):
@@ -53,42 +64,36 @@ def get_current_weather(lat, lon):
         "current": "temperature_2m",
         "timezone": "America/Los_Angeles"
     }
-    response = requests.get(url, params=params)
+    response = session.get(url, params=params, timeout=10)
     return response.json()
 
-def generate_dashboard():
-    df = pd.read_csv("daily_log.csv", skipinitialspace=True)
-    df["datetime"] = pd.to_datetime(df["time"])
-    df = df.sort_values("datetime")
-    print(df.columns.tolist())
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(df["datetime"], df["temp_f"], color="steelblue",
-            linewidth=2, marker='o', markersize=5, label="Temp (°F)")
+def generate_dashboard(df):
     max_idx = df["temp_f"].idxmax()
     min_idx = df["temp_f"].idxmin()
 
-    ax.scatter(df.loc[max_idx, "datetime"], df.loc[max_idx, "temp_f"],
-               color="red", zorder=5, label=f"Max: {df.loc[max_idx, 'temp_f']}°F")
-    ax.scatter(df.loc[min_idx, "datetime"], df.loc[min_idx, "temp_f"],
-               color="blue", zorder=5, label=f"Min: {df.loc[min_idx, 'temp_f']}°F")
-    ax.annotate(f"Max: {df.loc[max_idx, 'temp_f']}°F",
-                xy=(df.loc[max_idx, "datetime"], df.loc[max_idx, "temp_f"]),
-                xytext=(10, 10), textcoords="offset points",
-                color="red", fontsize=9)
-    ax.annotate(f"Min: {df.loc[min_idx, 'temp_f']}°F",
-                xy=(df.loc[min_idx, "datetime"], df.loc[min_idx, "temp_f"]),
-                xytext=(10, -15), textcoords="offset points",
-                color="blue", fontsize=9)
+    fig = go.Figure()
 
-    ax.set_ylim(df["temp_f"].min() - 5, df["temp_f"].max() + 8)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
-    plt.xticks(rotation=45)
-    ax.set_title("My City Temperature Dashboard")
-    ax.set_ylabel("Temperature (°F)")
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig("dashboard.png", dpi=150)
-    plt.close()
+    fig.add_scatter(
+        x=df["datetime"], y=df["temp_f"],
+        mode="lines+markers", name="Temp (F)"
+    )
+    fig.add_scatter(
+        x=[df.loc[max_idx, "datetime"]], y=[df.loc[max_idx, "temp_f"]],
+        mode="markers+text",
+        marker=dict(color="red", size=14, symbol="star"),
+        text=[f"Max: {round(df.loc[max_idx, 'temp_f'], 1)}F"],
+        textposition="top right", name="Max"
+    )
+    fig.add_scatter(
+        x=[df.loc[min_idx, "datetime"]], y=[df.loc[min_idx, "temp_f"]],
+        mode="markers+text",
+        marker=dict(color="royalblue", size=14, symbol="star"),
+        text=[f"Min: {round(df.loc[min_idx, 'temp_f'], 1)}F"],
+        textposition="bottom right", name="Min"
+    )
+
+    fig.write_html("dashboard.html", include_plotlyjs="cdn")
+    print("Dashboard saved to dashboard.html")
 
 
 today = date.today()
@@ -157,4 +162,8 @@ historical_df.to_csv("historical_weather.csv", index=False)
 forecast_df.to_csv("forecast_weather.csv", index=False)
 print("\nData saved to CSV files.")
 
-generate_dashboard()
+plot_df = pd.read_csv("daily_log.csv", skipinitialspace=True)
+plot_df["datetime"] = pd.to_datetime(plot_df["time"])
+plot_df = plot_df.sort_values("datetime")
+
+generate_dashboard(plot_df)
